@@ -349,7 +349,30 @@ class MT5Worker:
     async def run_async(self):
         """Run the worker service asynchronously."""
         print("\n🚀 MT5 Worker Started")
-        print("👀 Watching for trades...\n")
+        
+        # Display risk management status if available
+        try:
+            from src.config.risk_config import get_risk_config_status
+            
+            risk_config = get_risk_config_status()
+            
+            print("\n📊 Risk Management:")
+            print(f"   Status:          {'✅ ENABLED' if risk_config['enabled'] else '❌ DISABLED'}")
+            print(f"   Risk Percentage: {risk_config['risk_percentage']}%")
+            
+            max_risk = risk_config.get('max_risk_per_trade')
+            if max_risk is not None:
+                print(f"   Max Risk/Trade:  ${max_risk}")
+                
+            min_size = risk_config.get('min_position_size')
+            if min_size is not None:
+                print(f"   Min Size:        {min_size}")
+            
+            print(f"\n   Config Path:     config/risk_config.json")
+        except Exception as e:
+            logger.warning(f"Could not display risk settings: {e}")
+        
+        print("\n👀 Watching for trades...\n")
         
         try:
             # Initialize positions

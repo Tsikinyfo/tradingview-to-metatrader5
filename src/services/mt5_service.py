@@ -10,6 +10,7 @@ import MetaTrader5 as mt5
 from src.config.mt5_symbol_config import SymbolMapper
 from src.utils.database_handler import DatabaseHandler
 from src.utils.instrument_manager import InstrumentManager
+from src.config.risk_config import get_risk_parameters
 
 logger = logging.getLogger('MT5Service')
 
@@ -57,9 +58,11 @@ class MT5Service:
                 logger.info("Available terminals:")
                 for terminal in available:
                     logger.info(terminal)
+    
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for this service."""
         self.loop = loop
+    
     def _init(self) -> bool:
         """Internal method for MT5 initialization."""
         try:
@@ -113,6 +116,106 @@ class MT5Service:
             self.initialized = False
             return False
 
+
+    def calculate_position_size(self, symbol: str, order_type: int, price: float, 
+                            stop_loss: float = None, original_volume: float = None) -> float:
+        """
+        Calculate position size based on risk parameters
+        
+        Args:
+            symbol: Trading symbol
+            order_type: MT5 order type (BUY/SELL)
+            price: Entry price
+            stop_loss: Stop loss price
+            original_volume: Original volume from TradingView
+            
+        Returns:
+            Adjusted volume based on risk parameters
+        """
+        # Get risk parameters
+        risk_params = get_risk_parameters()
+        
+        # If risk management is disabled, return original volume
+        if not risk_params.enabled:
+            return original_volume
+        
+        try:
+            # Initialize MT5 if not initialized
+            if not self.initialized and not self._init():
+                logger.error("Failed to initialize MT5 for risk calculation")
+                return original_volume
+            
+            # Get account info
+            account_info = mt5.account_info()
+            if not account_info:
+                logger.error("Failed to get account info for risk calculation")
+                return original_volume
+            
+            # Get symbol info
+            symbol_info = mt5.symbol_info(symbol)
+            if not symbol_info:
+                logger.error(f"Failed to get symbol info for {symbol}")
+                return original_volume
+            
+            # If stop loss is not provided, use a default distance (e.g., 1% from entry)
+            if stop_loss is None:
+                if order_type == mt5.ORDER_TYPE_BUY:  # Long position
+                    stop_loss = price * 0.99
+                else:  # Short position
+                    stop_loss = price * 1.01
+            
+            # Calculate stop distance in points
+            stop_distance = abs(price - stop_loss) / symbol_info.point
+            
+            if stop_distance <= 0:
+                logger.warning("Stop distance is zero or negative, using original volume")
+                return original_volume
+            
+            # Calculate balance to risk
+            balance = account_info.balance
+            risk_amount = balance * (risk_params.risk_percentage / 100)
+            
+            # Apply max risk per trade if specified
+            if risk_params.max_risk_per_trade is not None:
+                risk_amount = min(risk_amount, risk_params.max_risk_per_trade)
+                
+            # Calculate tick value (cost of 1 point movement)
+            tick_value = symbol_info.trade_tick_value
+            
+            # Calculate position size based on risk
+            position_size = risk_amount / (stop_distance * tick_value / symbol_info.trade_tick_size)
+            
+            # Round to symbol's volume step
+            volume_step = symbol_info.volume_step
+            position_size = round(position_size / volume_step) * volume_step
+            
+            # Ensure it's within allowed limits
+            if position_size < symbol_info.volume_min:
+                position_size = symbol_info.volume_min
+            if symbol_info.volume_max > 0 and position_size > symbol_info.volume_max:
+                position_size = symbol_info.volume_max
+            
+            # Apply minimum position size if specified
+            if risk_params.min_position_size is not None and position_size < risk_params.min_position_size:
+                position_size = risk_params.min_position_size
+            
+            # Preserve original direction (buy/sell)
+            if original_volume < 0:
+                position_size = -position_size
+            
+            logger.info(f"Risk calculation for {symbol}:")
+            logger.info(f"  Balance: {balance}, Risk %: {risk_params.risk_percentage}%")
+            logger.info(f"  Risk amount: {risk_amount}")
+            logger.info(f"  Stop distance: {stop_distance} points")
+            logger.info(f"  Original volume: {original_volume}, Calculated volume: {position_size}")
+            
+            return position_size
+            
+        except Exception as e:
+            logger.error(f"Error calculating position size: {e}")
+            return original_volume
+
+
     async def _retry_operation(self, operation: Callable, max_retries: int = 3) -> Any:
         """Retry an operation with exponential backoff."""
         for attempt in range(max_retries):
@@ -161,96 +264,111 @@ class MT5Service:
             logger.error(f"Error determining filling type: {e}")
             return None
 
+
     def _execute_order(self, trade_data: Dict[str, Any]) -> Dict[str, Any]:
-            try:
-                # Initialize MT5
-                if not self.initialized and not mt5.initialize():
-                    return {"error": "MT5 initialization failed"}
+        try:
+            # Initialize MT5
+            if not self.initialized and not mt5.initialize():
+                return {"error": "MT5 initialization failed"}
 
-                # Extract trade details
-                execution_data = trade_data.get('execution_data', {})
-                instrument = trade_data.get('instrument') or execution_data.get('instrument')
-                side = trade_data.get('side') or execution_data.get('side')
-                quantity = float(trade_data.get('qty') or execution_data.get('qty', 0))
-                take_profit = trade_data.get('take_profit')
-                stop_loss = trade_data.get('stop_loss')
+            # Extract trade details
+            execution_data = trade_data.get('execution_data', {})
+            instrument = trade_data.get('instrument') or execution_data.get('instrument')
+            side = trade_data.get('side') or execution_data.get('side')
+            quantity = float(trade_data.get('qty') or execution_data.get('qty', 0))
+            take_profit = trade_data.get('take_profit')
+            stop_loss = trade_data.get('stop_loss')
+            
+            # Validate required fields
+            if not all([instrument, side, quantity]):
+                return {"error": "Missing required fields"}
                 
-                # Validate required fields
-                if not all([instrument, side, quantity]):
-                    return {"error": "Missing required fields"}
-                    
-                # Map symbol and enable for trading
-                mt5_symbol = self.map_symbol(instrument)
-                if not mt5.symbol_select(mt5_symbol, True):
-                    return {"error": f"Failed to select symbol {mt5_symbol}"}
-                
-                # Get symbol info
-                symbol_info = mt5.symbol_info(mt5_symbol)
-                if not symbol_info:
-                    return {"error": f"Failed to get symbol info for {mt5_symbol}"}
-                
-                # Prepare order parameters
-                is_buy = side.lower() == 'buy'
-                order_type = mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL
-                price = symbol_info.ask if is_buy else symbol_info.bid
-                position_id = trade_data.get('execution_data', {}).get('positionId', 'unknown')
+            # Map symbol and enable for trading
+            mt5_symbol = self.map_symbol(instrument)
+            if not mt5.symbol_select(mt5_symbol, True):
+                return {"error": f"Failed to select symbol {mt5_symbol}"}
+            
+            # Get symbol info
+            symbol_info = mt5.symbol_info(mt5_symbol)
+            if not symbol_info:
+                return {"error": f"Failed to get symbol info for {mt5_symbol}"}
+            
+            # Prepare order parameters
+            is_buy = side.lower() == 'buy'
+            order_type = mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL
+            price = symbol_info.ask if is_buy else symbol_info.bid
+            position_id = trade_data.get('execution_data', {}).get('positionId', 'unknown')
 
-                # Get supported filling modes
-                filling_type = self._get_filling_type(symbol_info)
+            # Get supported filling modes
+            filling_type = self._get_filling_type(symbol_info)
 
-                # Construct order request
-                request = {
-                    "action": mt5.TRADE_ACTION_DEAL,
-                    "symbol": mt5_symbol,
-                    "volume": quantity,
-                    "type": order_type,
-                    "price": price,
-                    "deviation": 20,
-                    "magic": 234000,
-                    "comment": f"TV#{position_id}",
-                    "type_time": mt5.ORDER_TIME_GTC,
+            # Apply risk management to calculate adjusted volume
+            original_quantity = quantity
+            quantity = self.calculate_position_size(
+                symbol=mt5_symbol,
+                order_type=order_type,
+                price=price,
+                stop_loss=stop_loss,
+                original_volume=quantity
+            )
+
+            # Construct order request
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": mt5_symbol,
+                "volume": abs(quantity),  # Ensure positive volume
+                "type": order_type,
+                "price": price,
+                "deviation": 20,
+                "magic": 234000,
+                "comment": f"TV#{position_id}",
+                "type_time": mt5.ORDER_TIME_GTC,
+            }
+
+            # Only add filling type if we determined it should be set
+            if filling_type is not None:
+                request["type_filling"] = filling_type
+            
+            # Add TP/SL if provided
+            if take_profit is not None:
+                request["tp"] = float(take_profit)
+            if stop_loss is not None:
+                request["sl"] = float(stop_loss)
+
+            # Send order
+            result = mt5.order_send(request)
+            if not result or result.retcode != mt5.TRADE_RETCODE_DONE:
+                error_msg = mt5.last_error() if not result else result.comment
+                return {
+                    "error": f"Order failed: {error_msg}",
+                    "retcode": result.retcode if result else None
                 }
-
-                # Only add filling type if we determined it should be set
-                if filling_type is not None:
-                    request["type_filling"] = filling_type
+            
+            # Check if risk management was applied
+            risk_params = get_risk_parameters()
+            volume_adjusted = risk_params.enabled and abs(original_quantity - quantity) > 0.00001
+            
+            # Prepare success response
+            response = {
+                "mt5_ticket": str(result.order),
+                "mt5_position": str(result.order),
+                "volume": result.volume,
+                "original_volume": original_quantity if volume_adjusted else None,
+                "risk_managed": volume_adjusted,
+                "price": result.price or price,
+                "symbol": mt5_symbol,
+                "side": side,
+                "take_profit": take_profit,
+                "stop_loss": stop_loss,
+                "comment": result.comment,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            return response
                 
-                # Add TP/SL if provided
-                if take_profit is not None:
-                    request["tp"] = float(take_profit)
-                if stop_loss is not None:
-                    request["sl"] = float(stop_loss)
-
-                # Send order
-                result = mt5.order_send(request)
-                if not result or result.retcode != mt5.TRADE_RETCODE_DONE:
-                    error_msg = mt5.last_error() if not result else result.comment
-                    return {
-                        "error": f"Order failed: {error_msg}",
-                        "retcode": result.retcode if result else None
-                    }
-                
-                # Prepare success response
-                response = {
-                    "mt5_ticket": str(result.order),
-                    "mt5_position": str(result.order),
-                    "volume": result.volume,
-                    "price": result.price or price,
-                    "symbol": mt5_symbol,
-                    "side": side,
-                    "take_profit": take_profit,
-                    "stop_loss": stop_loss,
-                    "comment": result.comment,
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                return response
-                
-            except Exception as e:
-                logger.error(f"Error executing order: {e}")
-                return {"error": str(e)}
-
-            # return await self.loop.run_in_executor(None, _execute)
+        except Exception as e:
+            logger.error(f"Error executing order: {e}")
+            return {"error": str(e)}
 
     async def async_execute_market_order(self, trade_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute market order on MT5 asynchronously."""

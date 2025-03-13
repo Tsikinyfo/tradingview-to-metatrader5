@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import signal
@@ -90,6 +91,38 @@ def run_proxy():
         print("Starting proxy server...")
         print("Press Ctrl+C to stop\n")
 
+        # Configure logging to handle connection resets gracefully
+        logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+        
+        # Configure mitmproxy logging
+        logging.getLogger('mitmproxy.proxy.protocol').setLevel(logging.WARNING)
+        
+        # Set up custom error handler for asyncio
+        def custom_exception_handler(loop, context):
+            exception = context.get('exception')
+            if isinstance(exception, ConnectionResetError) and getattr(exception, 'winerror', None) == 10054:
+                # Silently ignore connection resets during internet outages
+                return
+            if 'exception' not in context:
+                loop.default_exception_handler(context)
+                return
+            
+            # Log other errors appropriately
+            logger = logging.getLogger('ProxyServer')
+            if isinstance(exception, (ConnectionResetError, ConnectionError)):
+                logger.debug(f"Connection error: {exception}")
+            else:
+                logger.error(f"Unhandled error: {exception}")
+
+        # Get event loop using the new recommended way
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        loop.set_exception_handler(custom_exception_handler)
+
         # Construct mitmdump command
         cmd = [
             "mitmdump",
@@ -100,12 +133,10 @@ def run_proxy():
             "--ssl-insecure",
             "--set", "console_output_level=error",
             "--set", "flow_detail=0",
+            "--set", "connection_strategy=lazy",  # Better handling of connection issues
             "-s", str(Path(project_root) / "src" / "main.py"),
             "~u orders\\?locale=\\w+&requestId=\\w+ | ~u executions\\?locale=\\w+&instrument=\\w+"
         ]
-
-        # Suppress connection reset errors
-        logging.getLogger('asyncio').setLevel(logging.CRITICAL)
 
         # Run mitmdump
         subprocess.run(cmd)

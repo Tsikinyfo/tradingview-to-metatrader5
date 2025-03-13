@@ -106,7 +106,6 @@ class Runner:
         for cmd, desc in commands.items():
             print(f"python run.py {cmd:<15} - {desc}")
 
-
     def run_token_monitor(self):
         """Start the Token Monitor."""
         try:

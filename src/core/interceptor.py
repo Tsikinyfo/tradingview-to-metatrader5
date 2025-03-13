@@ -3,8 +3,9 @@ import asyncio
 import json
 import os
 import sys
+import logging
 from pathlib import Path
-
+from functools import wraps
 from dotenv import load_dotenv
 
 from backup.instrument_sync import InstrumentSynchronizer
@@ -21,6 +22,25 @@ TV_ACCOUNT_ID = os.getenv('TV_ACCOUNT_ID')
 
 # Create a global token manager instance
 GLOBAL_TOKEN_MANAGER = TokenManager()
+
+
+logger = logging.getLogger('TradingViewInterceptor')
+
+def handle_connection_errors(func):
+    """Decorator to handle connection errors gracefully."""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except (ConnectionResetError, ConnectionError) as e:
+            if isinstance(e, ConnectionResetError) and getattr(e, 'winerror', None) == 10054:
+                logger.debug("Network connection interrupted - this is normal during internet outages")
+            else:
+                logger.warning(f"Connection error: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            raise
+    return wrapper
 
 class TradingViewInterceptor:
     """Intercepts and handles TradingView requests."""
@@ -254,5 +274,26 @@ class TradingViewInterceptor:
                     
             except Exception as e:
                 print(f"❌ Error processing response: {e}")
+
+
+    @handle_connection_errors
+    async def async_process_order(self, request_data: dict, response_data: dict) -> None:
+        await self.trade_handler.process_order(request_data, response_data)
+
+    @handle_connection_errors
+    async def async_process_position_update(self, position_id: str, update_data: dict) -> None:
+        await self.trade_handler.process_position_update(position_id, update_data)
+
+    @handle_connection_errors
+    async def async_process_position_close(self, position_id: str, close_data: dict[str, any] = None) -> None:
+        await self.trade_handler.process_position_close(position_id, close_data)
+
+    @handle_connection_errors
+    async def async_process_execution(self, response_data: dict) -> None:
+        await self.trade_handler.process_execution(response_data)
+
+    @handle_connection_errors
+    async def async_process_tpsl_delete(self, order_id: str, order_type: str) -> None:
+        await self.trade_handler.process_tpsl_delete(order_id, order_type)
 
 addons = [TradingViewInterceptor()]

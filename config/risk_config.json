@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "risk_percentage": 2.0,
+  "max_risk_per_trade": null,
+  "min_position_size": null
+}

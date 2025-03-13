@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get default suffix from environment or use fallback
-DEFAULT_SUFFIX = os.getenv('MT5_DEFAULT_SUFFIX', '.a')
+DEFAULT_SUFFIX = os.getenv('MT5_DEFAULT_SUFFIX', '')
 
 # Load symbol map from environment or use empty dict
 try:
