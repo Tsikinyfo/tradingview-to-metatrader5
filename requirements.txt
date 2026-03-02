@@ -1,9 +1,8 @@
 pip
 setuptools
 wheel
-# Generated requirements.txt
 
-# Core dependencies
+# Generated requirements.txt
 
 # Proxy & Networking
 aiohttp==3.10.10
@@ -26,5 +25,4 @@ urllib3==2.2.3
 psutil==5.9.8
 pywin32==306; sys_platform == 'win32'
 pandas==2.1.4
-openpyxl==3.1.2  # For Excel file support
-# Development dependencies
+openpyxl==3.1.2
