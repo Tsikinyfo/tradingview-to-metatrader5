@@ -1,3 +1,6 @@
+pip
+setuptools
+wheel
 # Generated requirements.txt
 
 # Core dependencies
