@@ -6,7 +6,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from dotenv import load_dotenv  # ← AJOUTEZ CETTE LIGNE
 
+load_dotenv()  # ← AJOUTEZ CETTE LIGNE
 
 class Runner:
     """Runner class for managing TradingView Copier operations."""

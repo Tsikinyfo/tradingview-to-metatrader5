@@ -48,7 +48,7 @@ class MitmCertInstaller:
             try:
                 # Run mitmproxy briefly to generate cert
                 proc = subprocess.Popen(
-                    ['mitmdump', '--listen-port', '8080'],
+                    ['mitmdump', '--listen-port', '8081'],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
@@ -83,7 +83,7 @@ class MitmCertInstaller:
                 self.logger.info("Certificate installed successfully!")
                 self.logger.info("\nNext steps:")
                 self.logger.info("1. Restart your browsers")
-                self.logger.info("2. For TradingView Desktop, set system proxy to 127.0.0.1:8080")
+                self.logger.info("2. For TradingView Desktop, set system proxy to 127.0.0.1:8081")
                 return True
             else:
                 self.logger.error(f"Certificate installation failed: {result.stderr}")

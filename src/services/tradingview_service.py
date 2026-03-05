@@ -24,8 +24,8 @@ class TradingViewService:
         self.loop = asyncio.get_event_loop()
         # Use local proxy for routing through mitmproxy
         self.proxies = {
-            'http': 'http://localhost:8080',
-            'https': 'http://localhost:8080'
+            'http': 'http://localhost:8081',
+            'https': 'http://localhost:8081'
         }
     
     async def _get_valid_token(self) -> str:

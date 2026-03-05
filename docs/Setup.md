@@ -118,7 +118,7 @@ Open Proxy settings on your Windows machine and set the following values:
 
 - Use a proxy server : `ON`
 - Address : `127.0.0.1`
-- Port : `8080`
+- Port : `8081`
 - User the proxy sever except for addresses: `localhost;127.0.0.1;<local>`
 - Don't use the proxy server for local (intranet) addresses : ☑
 
@@ -128,7 +128,7 @@ Open Proxy settings on your Windows machine and set the following values:
 - ☑ Use a proxy server
 - Proxy Protocol: HTTP
 - Server IP address or domain name: `127.0.0.1`
-- Port: `8080`
+- Port: `8081`
 - Username: < blank >
 - Password: < blank >
 

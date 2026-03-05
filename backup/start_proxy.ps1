@@ -7,11 +7,11 @@ Get-Process | Where-Object { $_.ProcessName -like "*mitm*" } | ForEach-Object {
     Stop-Process -Id $_.Id -Force
 }
 
-# Free up port 8080
-$netstatOutput = netstat -ano | Select-String ":8080"
+# Free up port 8081
+$netstatOutput = netstat -ano | Select-String ":8081"
 $netstatOutput | ForEach-Object {
     $processId = ($_ -split ' +')[-1]
-    Write-Host "Freeing port 8080 (PID: $processId)"
+    Write-Host "Freeing port 8081 (PID: $processId)"
     Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
 }
 
@@ -33,7 +33,7 @@ Write-Host "Press Ctrl+C to stop`n"
 
 try {
     # Start mitmproxy with minimal output
-    mitmdump --quiet --listen-host 127.0.0.1 --listen-port 8080 --mode regular --ssl-insecure --set console_output_level=error --set flow_detail=0 -s src/main.py "~u orders\?locale=\w+&requestId=\w+ | ~u executions\?locale=\w+&instrument=\w+"
+    mitmdump --quiet --listen-host 127.0.0.1 --listen-port 8081 --mode regular --ssl-insecure --set console_output_level=error --set flow_detail=0 -s src/main.py "~u orders\?locale=\w+&requestId=\w+ | ~u executions\?locale=\w+&instrument=\w+"
 }
 catch {
     Write-Host "`nError: $_" -ForegroundColor Red

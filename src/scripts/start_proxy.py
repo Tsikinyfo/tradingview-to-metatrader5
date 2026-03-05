@@ -45,7 +45,7 @@ def setup_environment():
 def cleanup():
     """Cleanup on exit."""
     kill_mitm_processes()
-    kill_process_on_port(8080)
+    kill_process_on_port(8081)
 
 def signal_handler(signum, frame):
     """Handle termination signals."""
@@ -75,7 +75,7 @@ def run_proxy():
         signal.signal(signal.SIGTERM, signal_handler)
 
         # Initial cleanup and port check (do this before clearing screen)
-        print("Killing previous processes on port :8080")
+        print("Killing previous processes on port :8081")
         cleanup()
 
         # Clear screen only after cleanup
@@ -95,7 +95,7 @@ def run_proxy():
             "mitmdump",
             "--quiet",
             "--listen-host", "127.0.0.1",
-            "--listen-port", "8080",
+            "--listen-port", "8081",
             "--mode", "regular",
             "--ssl-insecure",
             "--set", "console_output_level=error",
